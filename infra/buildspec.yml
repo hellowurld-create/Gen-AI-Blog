@@ -3,12 +3,31 @@ version: 0.2
 phases:
   pre_build:
     commands:
-      - echo Logging in to Amazon ECR...
-      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
+      - echo "=== Pre-build Phase ==="
+      - echo "Checking environment variables..."
+      - echo "AWS_ACCOUNT_ID: $AWS_ACCOUNT_ID"
+      - echo "AWS_DEFAULT_REGION: $AWS_DEFAULT_REGION"
+      - |
+        if [ -z "$AWS_ACCOUNT_ID" ] || [ -z "$AWS_DEFAULT_REGION" ]; then
+          echo "ERROR: AWS_ACCOUNT_ID or AWS_DEFAULT_REGION is not set!"
+          exit 1
+        fi
+      - echo "Testing AWS CLI access..."
+      - aws sts get-caller-identity || (echo "ERROR: Cannot access AWS CLI. Check service role permissions." && exit 1)
+      - echo "Logging in to Amazon ECR..."
+      - |
+        aws ecr get-login-password --region $AWS_DEFAULT_REGION | \
+        docker login --username AWS --password-stdin \
+        $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com || \
+        (echo "ERROR: Failed to login to ECR. Check ECR permissions and repository existence." && exit 1)
+      - echo "ECR login successful!"
       - REPOSITORY_URI_BACKEND=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/blog-backend
       - REPOSITORY_URI_FRONTEND=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/blog-frontend
       - COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
       - IMAGE_TAG=${COMMIT_HASH:=latest}
+      - echo "Backend repository: $REPOSITORY_URI_BACKEND"
+      - echo "Frontend repository: $REPOSITORY_URI_FRONTEND"
+      - echo "Image tag: $IMAGE_TAG"
 
   build:
     commands:
