@@ -7,19 +7,11 @@ phases:
       - echo "Checking environment variables..."
       - echo "AWS_ACCOUNT_ID: $AWS_ACCOUNT_ID"
       - echo "AWS_DEFAULT_REGION: $AWS_DEFAULT_REGION"
-      - |
-        if [ -z "$AWS_ACCOUNT_ID" ] || [ -z "$AWS_DEFAULT_REGION" ]; then
-          echo "ERROR: AWS_ACCOUNT_ID or AWS_DEFAULT_REGION is not set!"
-          exit 1
-        fi
+      - if [ -z "$AWS_ACCOUNT_ID" ] || [ -z "$AWS_DEFAULT_REGION" ]; then echo "ERROR: AWS_ACCOUNT_ID or AWS_DEFAULT_REGION is not set!" && exit 1; fi
       - echo "Testing AWS CLI access..."
       - aws sts get-caller-identity || (echo "ERROR: Cannot access AWS CLI. Check service role permissions." && exit 1)
       - echo "Logging in to Amazon ECR..."
-      - |
-        aws ecr get-login-password --region $AWS_DEFAULT_REGION | \
-        docker login --username AWS --password-stdin \
-        $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com || \
-        (echo "ERROR: Failed to login to ECR. Check ECR permissions and repository existence." && exit 1)
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com || (echo "ERROR: Failed to login to ECR. Check ECR permissions and repository existence." && exit 1)
       - echo "ECR login successful!"
       - REPOSITORY_URI_BACKEND=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/blog-backend
       - REPOSITORY_URI_FRONTEND=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/blog-frontend
