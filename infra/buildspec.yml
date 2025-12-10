@@ -16,7 +16,7 @@ phases:
       - echo Building the Docker image for backend...
       - docker build -t $REPOSITORY_URI_BACKEND:$IMAGE_TAG -t $REPOSITORY_URI_BACKEND:latest ./backend
       - echo Building the Docker image for frontend...
-      - docker build -t $REPOSITORY_URI_FRONTEND:$IMAGE_TAG -t $REPOSITORY_URI_FRONTEND:latest ./frontend
+      - docker build --build-arg VITE_API_URL=${VITE_API_URL} -t $REPOSITORY_URI_FRONTEND:$IMAGE_TAG -t $REPOSITORY_URI_FRONTEND:latest ./frontend
 
   post_build:
     commands:

@@ -374,6 +374,11 @@ FRONTEND_IMAGE=your_account_id.dkr.ecr.us-east-1.amazonaws.com/blog-frontend:lat
    - Click **"Add environment variable"** again
    - **Name:** `AWS_DEFAULT_REGION`
    - **Value:** Your region (e.g., `us-east-1`)
+   - Click **"Add environment variable"** again
+   - **Name:** `VITE_API_URL`
+   - **Value:** `http://YOUR_EC2_PUBLIC_IP:5000/api`
+   - **⚠️ IMPORTANT:** Replace `YOUR_EC2_PUBLIC_IP` with your EC2 instance's Public IPv4 address (get it from EC2 Console after creating the instance)
+   - **Note:** If you don't have the EC2 IP yet, you can add this later or use a placeholder and rebuild after deployment
 
 9. **Create Project:**
    - Click **"Create build project"** button
@@ -499,14 +504,15 @@ FRONTEND_IMAGE=your_account_id.dkr.ecr.us-east-1.amazonaws.com/blog-frontend:lat
 cd ~/blog-app
 
 # Login to ECR (replace with your values)
-aws ecr get-login-password --region us-east-1 | \
-    docker login --username AWS --password-stdin \
-    YOUR_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com
+# Use single-line format for Session Manager compatibility
+aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin YOUR_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com
 ```
 
 **Replace:**
 - `us-east-1` with your region
-- `YOUR_ACCOUNT_ID` with your 12-digit account ID
+- `YOUR_ACCOUNT_ID` with your 12-digit account ID (e.g., `971781420507`)
+
+**Note:** If you get an "AccessDeniedException" error, see the troubleshooting section below to add ECR permissions to your IAM user.
 
 ### Step 6.2: Pull and Start Containers
 
@@ -547,6 +553,45 @@ curl http://localhost:5000/health
 # Get articles
 curl http://localhost:5000/api/articles
 ```
+
+### Step 6.4: Update Environment Variables on EC2 (If Needed)
+
+**Location of .env file on EC2:**
+The `.env` file is located at: `~/blog-app/.env`
+
+**To edit it:**
+```bash
+cd ~/blog-app
+nano .env
+```
+
+**Important Notes:**
+
+1. **Frontend API URL (`VITE_API_URL`):**
+   - This is set during Docker build in CodeBuild (not in the .env file on EC2)
+   - If your EC2 IP changes, you need to:
+     - Update `VITE_API_URL` in CodeBuild environment variables
+     - Rebuild the frontend image in CodeBuild
+     - Pull the new image on EC2
+
+2. **Backend/Database Variables:**
+   - These are in the `.env` file on EC2
+   - Used by `docker-compose.prod.yml`
+   - After editing, restart containers:
+     ```bash
+     docker-compose -f docker-compose.prod.yml down
+     docker-compose -f docker-compose.prod.yml up -d
+     ```
+
+3. **Common Variables in .env:**
+   ```env
+   DB_PASSWORD=your_password
+   HUGGINGFACE_API_KEY=your_key
+   AWS_REGION=us-east-1
+   AWS_ACCOUNT_ID=your_account_id
+   BACKEND_IMAGE=your_account_id.dkr.ecr.region.amazonaws.com/blog-backend:latest
+   FRONTEND_IMAGE=your_account_id.dkr.ecr.region.amazonaws.com/blog-frontend:latest
+   ```
 
 ---
 
@@ -862,20 +907,110 @@ If CodeConnections continues to fail, use GitHub OAuth token:
 
 3. **Retry Build**
 
+### Issue: "AccessDeniedException: User is not authorized to perform: ecr:GetAuthorizationToken"
+
+**This error means:** Your IAM user doesn't have permission to access ECR.
+
+**Solution - Step 1: Add ECR Permissions to Your IAM User**
+
+1. **Go to IAM Console:**
+   - Search for "IAM" in AWS search bar
+   - Click "IAM"
+
+2. **Find Your User:**
+   - Click **"Users"** (left sidebar)
+   - Search for your user (e.g., `user`)
+   - Click on the username
+
+3. **Add Permissions:**
+   - Click **"Add permissions"** button
+   - Click **"Attach policies directly"**
+   - Search for: **"AmazonEC2ContainerRegistryReadOnly"**
+   - ✅ Check the box next to it
+   - Click **"Next"**
+   - Click **"Add permissions"**
+
+4. **If You Need to Push Images (for CodeBuild):**
+   - Also attach: **"AmazonEC2ContainerRegistryPowerUser"**
+   - This gives read/write access to ECR
+
+**Solution - Step 2: Fix Non-TTY Error**
+
+If you see "Cannot perform an interactive login from a non TTY device", use this command format instead:
+
+```bash
+# Single-line command (works in Session Manager)
+aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin YOUR_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com
+```
+
+**Or use this alternative method:**
+
+```bash
+# Get the password first
+ECR_PASSWORD=$(aws ecr get-login-password --region us-east-1)
+
+# Then login
+echo $ECR_PASSWORD | docker login --username AWS --password-stdin YOUR_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com
+```
+
+**Replace:**
+- `us-east-1` with your region
+- `YOUR_ACCOUNT_ID` with your 12-digit account ID (e.g., `971781420507`)
+
+**Solution - Step 3: Verify It Works**
+
+```bash
+# Check AWS credentials
+aws sts get-caller-identity
+
+# Test ECR access
+aws ecr describe-repositories --region us-east-1
+```
+
 ### Issue: Can't Pull Images on EC2
 
 **Solution:**
 ```bash
-# Verify ECR login
-aws ecr get-login-password --region us-east-1 | \
-    docker login --username AWS --password-stdin \
-    YOUR_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com
+# Verify ECR login (use single-line format for Session Manager)
+aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin YOUR_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com
 
 # Check AWS credentials
 aws sts get-caller-identity
 
 # Verify security group allows outbound HTTPS
 ```
+
+### Issue: Frontend Can't Connect to Backend (API Errors)
+
+**This happens when:** The frontend was built with the wrong API URL (e.g., `localhost` instead of your EC2 IP).
+
+**Solution - Update API URL:**
+
+1. **Get Your EC2 Public IP:**
+   - Go to EC2 Console → Select your instance
+   - Copy the "Public IPv4 address"
+
+2. **Update CodeBuild Environment Variable:**
+   - Go to CodeBuild Console → Select `blog-build` project
+   - Click **"Edit"** → Scroll to **"Environment"** section
+   - Find `VITE_API_URL` environment variable
+   - Update the value to: `http://YOUR_EC2_PUBLIC_IP:5000/api`
+   - Replace `YOUR_EC2_PUBLIC_IP` with your actual IP
+   - Click **"Update environment"**
+
+3. **Rebuild Frontend:**
+   - In CodeBuild, click **"Start build"**
+   - Wait for build to complete
+
+4. **Pull and Restart on EC2:**
+   ```bash
+   cd ~/blog-app
+   aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin YOUR_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com
+   docker-compose -f docker-compose.prod.yml pull frontend
+   docker-compose -f docker-compose.prod.yml up -d frontend
+   ```
+
+**Note:** The `.env` file on EC2 does NOT control the frontend API URL. It's baked into the Docker image during build time in CodeBuild.
 
 ### Issue: Containers Won't Start
 
@@ -885,7 +1020,7 @@ docker-compose -f docker-compose.prod.yml logs
 ```
 
 **Common fixes:**
-- Verify `.env` file has correct values
+- Verify `.env` file has correct values (located at `~/blog-app/.env`)
 - Check database password is set
 - Verify image URIs are correct
 - Check ports aren't already in use
