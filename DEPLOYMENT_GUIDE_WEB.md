@@ -363,7 +363,9 @@ FRONTEND_IMAGE=your_account_id.dkr.ecr.us-east-1.amazonaws.com/blog-frontend:lat
 7. **Service Role:**
    - **Service role:** New service role
    - **Role name:** `CodeBuildServiceRole-blog-build`
-   - CodeBuild will automatically create this with ECR permissions
+   - CodeBuild will automatically create this with basic permissions
+   - **⚠️ IMPORTANT:** After creating the project, you MUST add ECR permissions manually (see Step 4.2 below)
+   - **⚠️ NOTE:** You'll also need to add CodeConnections permissions if using GitHub connection
 
 8. **Environment Variables:**
    - Click **"Add environment variable"**
@@ -376,17 +378,89 @@ FRONTEND_IMAGE=your_account_id.dkr.ecr.us-east-1.amazonaws.com/blog-frontend:lat
 9. **Create Project:**
    - Click **"Create build project"** button
 
-### Step 4.2: Verify CodeBuild Permissions
+### Step 4.2: Add Required Permissions to CodeBuild Service Role
+
+**⚠️ THIS STEP IS CRITICAL - Don't skip it!**
 
 1. **Go to IAM Console:**
    - Search for "IAM" in AWS search bar
    - Click "IAM"
 
-2. **Check Service Role:**
+2. **Find Service Role:**
    - Click **"Roles"**
    - Search for `CodeBuildServiceRole-blog-build`
    - Click on the role
-   - Verify it has policies attached (should include ECR permissions)
+
+3. **Add ECR Full Access (Required for Docker images):**
+   - Click **"Add permissions"** → **"Attach policies"**
+   - In the search box, type: `AmazonEC2ContainerRegistryFullAccess`
+   - ✅ Check the box next to `AmazonEC2ContainerRegistryFullAccess`
+   - Click **"Add permissions"**
+   
+   **OR create a custom policy (more secure, recommended):**
+   - Click **"Add permissions"** → **"Create inline policy"**
+   - Click **"JSON"** tab
+   - Paste this policy:
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "ecr:GetAuthorizationToken",
+                "ecr:BatchCheckLayerAvailability",
+                "ecr:GetDownloadUrlForLayer",
+                "ecr:BatchGetImage",
+                "ecr:PutImage",
+                "ecr:InitiateLayerUpload",
+                "ecr:UploadLayerPart",
+                "ecr:CompleteLayerUpload"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
+```
+
+   - Click **"Next"**
+   - **Policy name:** `CodeBuild-ECR-Access`
+   - Click **"Create policy"**
+
+4. **Add CodeConnections Permission (Required for GitHub):**
+   - Click **"Add permissions"** → **"Create inline policy"**
+   - Click **"JSON"** tab
+   - Paste this policy:
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "codeconnections:UseConnection"
+            ],
+            "Resource": "arn:aws:codeconnections:*:*:connection/*"
+        }
+    ]
+}
+```
+
+   - **Note:** Using `*` allows all connections (allows future connections without reconfiguring)
+   - Click **"Next"**
+   - **Policy name:** `CodeBuild-CodeConnections-Access`
+   - Click **"Create policy"**
+
+5. **Verify All Permissions:**
+   - Go back to the role's **"Permissions"** tab
+   - You should now see:
+     - ✅ ECR permissions (for pushing Docker images)
+     - ✅ CodeConnections permissions (for GitHub access)
+     - ✅ Basic CodeBuild permissions (automatically added)
+
+**If you skip this step, your builds will fail with permission errors!**
 
 ---
 
@@ -560,6 +634,233 @@ docker-compose -f docker-compose.prod.yml ps
 - Verify `infra/buildspec.yml` exists in your repository
 - Check environment variables are set correctly
 - Verify ECR repositories exist
+
+### Issue: "Error while executing command: aws ecr get-login-password" (Exit Status 1)
+
+**This error means:** CodeBuild can't authenticate with ECR. The service role doesn't have ECR permissions, or environment variables are missing.
+
+**Solution - Step 1: Verify Environment Variables**
+
+1. **Go to CodeBuild Console:**
+   - Find your project `blog-build`
+   - Click **"Edit"** → Scroll to **"Environment"** section
+   - Check **"Environment variables"** section
+
+2. **Verify These Variables Exist:**
+   - `AWS_ACCOUNT_ID` - Should be your 12-digit account ID (e.g., `971781420507`)
+   - `AWS_DEFAULT_REGION` - Should be your region (e.g., `us-east-1`)
+
+3. **If Missing, Add Them:**
+   - Click **"Add environment variable"**
+   - **Name:** `AWS_ACCOUNT_ID`
+   - **Value:** Your AWS Account ID (12 digits)
+   - **Type:** Plaintext
+   - Click **"Add environment variable"** again
+   - **Name:** `AWS_DEFAULT_REGION`
+   - **Value:** Your region (e.g., `us-east-1`)
+   - **Type:** Plaintext
+   - Click **"Update environment"** to save
+
+**Solution - Step 2: Add ECR Permissions to Service Role**
+
+1. **Go to IAM Console:**
+   - Search for "IAM" in AWS search bar
+   - Click "IAM"
+
+2. **Find Your CodeBuild Service Role:**
+   - Click **"Roles"**
+   - Search for your CodeBuild service role (e.g., `CodeBuildServiceRole-blog-build`)
+   - Click on the role
+
+3. **Check Existing Permissions:**
+   - Look at **"Permissions"** tab
+   - You should see policies like `AWSCodeBuildDeveloperAccess` or similar
+   - If you see `ecr:*` permissions, skip to Step 3
+
+4. **Add ECR Permissions:**
+   - Click **"Add permissions"** → **"Attach policies"**
+   - Search for `AmazonEC2ContainerRegistryFullAccess`
+   - ✅ Check the box next to it
+   - Click **"Add permissions"**
+
+   **OR create a custom policy (more secure):**
+   - Click **"Add permissions"** → **"Create inline policy"**
+   - Click **"JSON"** tab
+   - Paste this policy:
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "ecr:GetAuthorizationToken",
+                "ecr:BatchCheckLayerAvailability",
+                "ecr:GetDownloadUrlForLayer",
+                "ecr:BatchGetImage",
+                "ecr:PutImage",
+                "ecr:InitiateLayerUpload",
+                "ecr:UploadLayerPart",
+                "ecr:CompleteLayerUpload"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
+```
+
+   - Click **"Next"**
+   - **Policy name:** `CodeBuild-ECR-Access`
+   - Click **"Create policy"**
+
+**Solution - Step 3: Verify ECR Repositories Exist**
+
+1. **Go to ECR Console:**
+   - Search for "ECR" in AWS search bar
+   - Click "Elastic Container Registry"
+
+2. **Check Repositories:**
+   - Verify `blog-backend` repository exists
+   - Verify `blog-frontend` repository exists
+   - If missing, create them (see Phase 2 of this guide)
+
+3. **Verify Repository Names Match:**
+   - Repository names must be exactly: `blog-backend` and `blog-frontend`
+   - Case-sensitive!
+
+**Solution - Step 4: Test the Command Manually**
+
+1. **Create a Test Build with Debug Output:**
+   - Edit your `buildspec.yml` (if you have access)
+   - Add debug commands before the ECR login:
+
+```yaml
+pre_build:
+  commands:
+    - echo "Debug: Checking environment variables"
+    - echo "AWS_ACCOUNT_ID=$AWS_ACCOUNT_ID"
+    - echo "AWS_DEFAULT_REGION=$AWS_DEFAULT_REGION"
+    - echo "Testing AWS CLI access..."
+    - aws sts get-caller-identity
+    - echo "Logging in to Amazon ECR..."
+    - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
+```
+
+2. **Run Build Again:**
+   - Check the logs to see which step fails
+   - This will help identify the exact issue
+
+**Solution - Step 5: Common Fixes**
+
+**If environment variables show as empty:**
+- Make sure variable names are EXACT: `AWS_ACCOUNT_ID` and `AWS_DEFAULT_REGION` (case-sensitive)
+- Remove and re-add the variables
+- Make sure "Type" is set to "Plaintext" not "Parameter store" or "Secrets Manager"
+
+**If you see "Unable to locate credentials":**
+- The service role doesn't have proper permissions
+- Follow Solution - Step 2 above
+
+**If you see "Repository does not exist":**
+- The repository name in buildspec.yml doesn't match ECR repository name
+- Check repository names are exactly: `blog-backend` and `blog-frontend`
+
+**If you see "Access denied":**
+- Your service role needs ECR permissions
+- Follow Solution - Step 2 above
+
+### Issue: "CLIENT_ERROR: Failed to get access token" or "Access denied to connection"
+
+**This error means:** CodeBuild can't access your GitHub connection. The service role doesn't have permissions to use CodeConnections.
+
+**Solution - Method 1: Add CodeConnections Permissions (Recommended)**
+
+1. **Go to IAM Console:**
+   - Search for "IAM" in AWS search bar
+   - Click "IAM"
+
+2. **Find Your CodeBuild Service Role:**
+   - Click **"Roles"**
+   - Search for your CodeBuild service role (e.g., `CodeBuildServiceRole-blog-build`)
+   - Click on the role
+
+3. **Add Inline Policy:**
+   - Click **"Add permissions"** → **"Create inline policy"**
+   - Click **"JSON"** tab
+   - Paste this policy (replace `CONNECTION_ARN` with your connection ARN from the error):
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "codeconnections:UseConnection"
+            ],
+            "Resource": "arn:aws:codeconnections:us-east-1:971781420507:connection/738521d7-b0c7-48f5-88ba-995bd111d555"
+        }
+    ]
+}
+```
+
+   - **Replace the Resource ARN** with your actual connection ARN from the error message
+   - Click **"Next"**
+   - **Policy name:** `CodeBuild-CodeConnections-Access`
+   - Click **"Create policy"**
+
+4. **Retry Build:**
+   - Go back to CodeBuild Console
+   - Start a new build
+   - The error should be resolved
+
+**Solution - Method 2: Recreate Connection with Proper Permissions**
+
+If Method 1 doesn't work:
+
+1. **Go to CodeBuild Console:**
+   - Find your project `blog-build`
+   - Click **"Edit"** → **"Source"**
+
+2. **Remove Current Connection:**
+   - Note which GitHub repository you're using
+   - Select a different source temporarily, save
+   - Then edit again
+
+3. **Reconnect GitHub:**
+   - Select **"GitHub"** as source provider
+   - Click **"Connect to GitHub"** or **"Connect using OAuth"**
+   - Authorize AWS to access your GitHub account
+   - Select your repository
+   - **IMPORTANT:** Make sure to grant all requested permissions
+
+4. **Update Service Role:**
+   - After reconnecting, go back to IAM
+   - The role should automatically get permissions
+   - If not, use Method 1 above
+
+**Solution - Method 3: Use GitHub Personal Access Token (Alternative)**
+
+If CodeConnections continues to fail, use GitHub OAuth token:
+
+1. **Create GitHub Personal Access Token:**
+   - Go to GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic)
+   - Click **"Generate new token (classic)"**
+   - Give it a name: `aws-codebuild`
+   - Select scopes: `repo` (full control of private repositories)
+   - Click **"Generate token"**
+   - **Copy the token** (only shown once!)
+
+2. **Update CodeBuild Source:**
+   - Go to CodeBuild Console
+   - Edit your project
+   - Source → **"GitHub"** → **"Personal access token"**
+   - Paste your token
+   - Select repository and branch
+   - Save changes
+
+3. **Retry Build**
 
 ### Issue: Can't Pull Images on EC2
 
