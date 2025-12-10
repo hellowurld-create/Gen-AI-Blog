@@ -173,6 +173,70 @@ commands:
 
 ---
 
+## Error 4: Docker Hub Rate Limit (429 Too Many Requests)
+
+**Error Message:**
+```
+429 Too Many Requests - You have reached your unauthenticated pull rate limit
+```
+
+**This error means:** Docker Hub has rate limits. CodeBuild has hit the limit for pulling public images.
+
+### Solution - Option 1: Use ECR Public Gallery (Recommended - Already Fixed!)
+
+**✅ The Dockerfiles have already been updated to use ECR Public Gallery instead of Docker Hub.**
+
+**What changed:**
+- `FROM node:18-alpine` → `FROM public.ecr.aws/docker/library/node:18-alpine`
+- ECR Public Gallery has no rate limits for public images
+- No authentication required for public images
+
+**Next steps:**
+1. Commit and push the updated Dockerfiles:
+   ```bash
+   git add backend/Dockerfile frontend/Dockerfile infra/buildspec.yml
+   git commit -m "Switch to ECR Public Gallery to avoid Docker Hub rate limits"
+   git push origin main
+   ```
+
+2. Retry your CodeBuild build
+3. The rate limit error should be resolved!
+
+### Solution - Option 2: Use Docker Hub Authentication (Alternative)
+
+If you prefer to use Docker Hub:
+
+1. **Create Docker Hub Account:**
+   - Go to: https://hub.docker.com/signup
+   - Create a free account
+
+2. **Get Docker Hub Credentials:**
+   - Username: Your Docker Hub username
+   - Password: Your Docker Hub password (or create access token)
+
+3. **Add to CodeBuild Environment Variables:**
+   - CodeBuild Console → Edit project
+   - Environment → Environment variables
+   - Add:
+     - **Name:** `DOCKERHUB_USERNAME`
+     - **Value:** Your Docker Hub username
+     - **Type:** Plaintext
+   - Add:
+     - **Name:** `DOCKERHUB_PASSWORD`
+     - **Value:** Your Docker Hub password/token
+     - **Type:** Plaintext (or Secrets Manager for security)
+
+4. **Update buildspec.yml:**
+   Add this before the build phase:
+   ```yaml
+   - echo "Logging in to Docker Hub..."
+   - echo $DOCKERHUB_PASSWORD | docker login --username $DOCKERHUB_USERNAME --password-stdin
+   ```
+
+**Note:** Option 1 (ECR Public Gallery) is recommended because it's simpler and has no rate limits!
+
+---
+
 ## Still Having Issues?
 
 If you still see errors after following these steps:
